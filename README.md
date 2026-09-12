@@ -20,6 +20,7 @@ providers/              Daytona sandbox + Nosana LLM / job helpers
 jobs/gpt-oss-20b.json   Official Ollama job definition (16 GB VRAM)
 scripts/setup_neo4j.py  One-time Aura constraints and indexes
 tests/
+run.sh                  Start local Neo4j via Docker Compose
 .env.example            Public template — copy to .env (gitignored)
 ```
 
@@ -70,7 +71,7 @@ From the repo root, with `.venv` active:
 
 ```bash
 # optional local Neo4j if you are not using Aura
-docker compose up -d
+./run.sh
 
 python scripts/setup_neo4j.py
 uvicorn studio.app:app --reload --host 127.0.0.1 --port 8000
