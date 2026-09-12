@@ -60,22 +60,20 @@ function escapeText(value) {
     .replaceAll(">", "&gt;");
 }
 
-function groupKeyMessages(messages, latest) {
-  const groups = { prompt: [], nosana: [], daytona: [] };
-  (messages || []).forEach((msg) => {
-    const text = String(msg);
-    if (/prompt/i.test(text)) groups.prompt.push(text.replace(/^Last prompt:\s*/i, ""));
-    else if (/nosana/i.test(text)) groups.nosana.push(text.replace(/^Nosana[^:]*:\s*/i, ""));
-    else if (/daytona/i.test(text)) groups.daytona.push(text.replace(/^Daytona[^:]*:\s*/i, ""));
-  });
-  if (!groups.prompt.length && latest.prompt) groups.prompt.push(latest.prompt);
-  if (!groups.nosana.length && (latest.nosana_reply || latest.nosana_error)) {
-    groups.nosana.push(latest.nosana_error || latest.nosana_reply);
+function executedText(run, kind) {
+  if (kind === "prompt") return String(run.prompt || "").trim();
+  if (kind === "nosana") {
+    return String(run.nosana_error || run.code || run.nosana_reply || "").trim();
   }
-  if (!groups.daytona.length && (latest.daytona_output || latest.daytona_error)) {
-    groups.daytona.push(latest.daytona_error || String(latest.daytona_output).trim());
-  }
-  return groups;
+  return String(run.daytona_error || run.daytona_output || "").trim();
+}
+
+function groupKeyMessages(latest) {
+  return {
+    prompt: executedText(latest, "prompt") ? [executedText(latest, "prompt")] : [],
+    nosana: executedText(latest, "nosana") ? [executedText(latest, "nosana")] : [],
+    daytona: executedText(latest, "daytona") ? [executedText(latest, "daytona")] : [],
+  };
 }
 
 function renderAnalysis(data) {
@@ -94,15 +92,16 @@ function renderAnalysis(data) {
   document.getElementById("meter-nosana").style.width = `${(nosana / max) * 100}%`;
   document.getElementById("meter-daytona").style.width = `${(daytona / max) * 100}%`;
   const latest = (data.runs && data.runs[0]) || {};
-  const groups = groupKeyMessages(data.key_messages, latest);
+  if (latest.prompt) showTurn(latest);
+  const groups = groupKeyMessages(latest);
   document.getElementById("message-groups").innerHTML = [
     ["prompt", "Prompt", groups.prompt],
-    ["nosana", "Nosana", groups.nosana],
-    ["daytona", "Daytona", groups.daytona],
+    ["nosana", "Nosana code", groups.nosana],
+    ["daytona", "Daytona output", groups.daytona],
   ]
     .map(([kind, title, items]) => {
       const body = items.length ? items.map((item) => escapeText(item)).join("\n\n") : "No logs yet.";
-      return `<article class="message-card ${kind}"><h3>${title}</h3><p>${body}</p></article>`;
+      return `<article class="message-card ${kind}"><h3>${title}</h3><pre>${body}</pre></article>`;
     })
     .join("");
   document.getElementById("ref-nosana-log").textContent =
@@ -115,6 +114,117 @@ function renderAnalysis(data) {
       : "Waiting for a run.";
   if (data.llm_summary) document.getElementById("out-summary").textContent = data.llm_summary;
   if (data.llm_ms) document.getElementById("summary-ms").textContent = `${data.llm_ms} ms`;
+  renderRunGraph(data.runs || []);
+  renderTimingChart(data.runs || []);
+}
+
+function shorten(value, n) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > n ? `${text.slice(0, n - 1)}…` : text;
+}
+
+function promptKey(run) {
+  return String(run.prompt || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function uniqueRunsByPrompt(runs, limit = 6) {
+  const seen = new Set();
+  const rows = [];
+  for (const run of runs) {
+    const key = promptKey(run);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const copies = runs.filter((item) => promptKey(item) === key).length;
+    rows.push({ ...run, copies });
+    if (rows.length >= limit) break;
+  }
+  return rows;
+}
+
+function sessionLabel(run) {
+  const id = String(run.session_id || "").replace(/^session-/, "");
+  return id ? `S ${id.slice(0, 6)}` : "Session";
+}
+
+function renderRunGraph(runs) {
+  const board = document.getElementById("neo4j-graph");
+  const rows = uniqueRunsByPrompt(runs, 6);
+  if (!rows.length) {
+    board.innerHTML = `<p class="graph-empty">No Neo4j runs yet. Execute the pipeline to draw Session → Prompt → Nosana → Daytona.</p>`;
+    return;
+  }
+  const colW = 210;
+  const rowH = 62;
+  const padX = 28;
+  const padY = 36;
+  const width = padX * 2 + colW * 4;
+  const height = padY * 2 + rows.length * rowH;
+  const headers = ["Session", "Prompt", "Nosana", "Daytona"];
+  const header = headers
+    .map((title, i) => `<text class="edge-label" x="${padX + i * colW + 66}" y="18" text-anchor="middle">${title}</text>`)
+    .join("");
+  const bodies = rows
+    .map((run, row) => {
+      const y = padY + row * rowH;
+      const labels = [
+        ["session", sessionLabel(run)],
+        ["prompt", run.copies > 1 ? `${shorten(run.prompt, 12)} ×${run.copies}` : shorten(run.prompt, 16) || "Prompt"],
+        ["nosana", shorten(run.nosana_error || run.code || run.nosana_reply || "Nosana", 16)],
+        ["daytona", shorten(run.daytona_error || run.daytona_output || "Daytona", 16)],
+      ];
+      const boxes = labels
+        .map(([kind, label], col) => {
+          const x = padX + col * colW;
+          return `<g>
+            <rect class="node-${kind}" x="${x}" y="${y}" width="132" height="36" rx="10" />
+            <text class="node-label" x="${x + 66}" y="${y + 23}" text-anchor="middle">${escapeText(label)}</text>
+          </g>`;
+        })
+        .join("");
+      const edges = [0, 1, 2]
+        .map((col) => {
+          const x1 = padX + col * colW + 132;
+          const x2 = padX + (col + 1) * colW;
+          const mid = (x1 + x2) / 2;
+          const rel = ["ASKED", "PLANNED_ON", "EXECUTED_IN"][col];
+          return `<path class="edge-line" d="M ${x1} ${y + 18} C ${mid} ${y + 18}, ${mid} ${y + 18}, ${x2} ${y + 18}" />
+            <text class="edge-label" x="${mid}" y="${y + 12}" text-anchor="middle">${rel}</text>`;
+        })
+        .join("");
+      return edges + boxes;
+    })
+    .join("");
+  board.innerHTML = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${header}${bodies}</svg>`;
+}
+
+function renderTimingChart(runs) {
+  const board = document.getElementById("timing-chart");
+  const rows = uniqueRunsByPrompt(runs, 6);
+  if (!rows.length) {
+    board.innerHTML = "";
+    return;
+  }
+  const max = Math.max(1, ...rows.map((run) => Math.max(run.nosana_ms || 0, run.daytona_ms || 0)));
+  const left = 120;
+  const top = 16;
+  const barH = 10;
+  const gap = 28;
+  const plotW = 420;
+  const height = top + rows.length * gap + 12;
+  const width = left + plotW + 24;
+  const bars = rows
+    .map((run, i) => {
+      const y = top + i * gap;
+      const nosana = Number(run.nosana_ms || 0);
+      const daytona = Number(run.daytona_ms || 0);
+      const label = shorten(run.prompt, 14) || `run ${i + 1}`;
+      return `<text class="edge-label" x="${left - 8}" y="${y + 12}" text-anchor="end">${escapeText(label)}</text>
+        <rect x="${left}" y="${y}" width="${(nosana / max) * plotW}" height="${barH}" rx="4" fill="#5b4dff" />
+        <rect x="${left}" y="${y + 12}" width="${(daytona / max) * plotW}" height="${barH}" rx="4" fill="#0f8f6b" />`;
+    })
+    .join("");
+  board.innerHTML = `<p class="chart-legend"><b class="nosana">■ Nosana GPU</b><b class="daytona">■ Daytona sandbox</b></p>
+    <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
 }
 
 async function loadHealth() {
@@ -185,7 +295,7 @@ form.addEventListener("submit", async (event) => {
     const turn = await res.json();
     if (!res.ok) throw new Error(turn.detail || "Run failed");
     showTurn(turn);
-    statusEl.textContent = "Step 4: analyzing Neo4j logs.";
+    statusEl.textContent = "Updating Neo4j insights, then summarizing logs.";
     await loadAnalysis();
     await summarizeLogs();
     statusEl.textContent = "Done. Use the three columns below to open Neo4j, Nosana, and Daytona.";

@@ -71,24 +71,14 @@
       </article>
     </section>
 
-    <section class="analysis">
-      <article class="step summary" data-step="4">
-        <header>
-          <span class="badge">Step 4</span>
-          <h2>Log analysis</h2>
-          <p class="step-state" id="state-4">Waiting</p>
-        </header>
-        <p class="outcome-label">Nosana summary of Neo4j logs <span id="summary-ms"></span></p>
-        <pre id="out-summary" class="outcome">After a run, Nosana reads stored logs and writes an operator summary here.</pre>
-      </article>
-    </section>
-
     <section class="insights" aria-label="Neo4j insights">
       <article class="insight-card">
         <header>
           <h2>Neo4j insights</h2>
-          <p class="lede">Grouped timings and key messages from stored Session → Nosana → Daytona logs.</p>
+          <p class="lede">Latest Session → Prompt → Nosana → Daytona path per prompt, plus grouped timings.</p>
         </header>
+        <div id="neo4j-graph" class="graph-board" role="img" aria-label="Neo4j run graph"></div>
+        <div id="timing-chart" class="chart-board" role="img" aria-label="Execution time chart"></div>
         <div class="metric-groups">
           <div class="metric-card runs">
             <span>Runs</span>
@@ -125,6 +115,18 @@
             <p>No logs yet.</p>
           </article>
         </div>
+      </article>
+    </section>
+
+    <section class="analysis">
+      <article class="step summary" data-step="4">
+        <header>
+          <span class="badge">Step 4</span>
+          <h2>Log analysis</h2>
+          <p class="step-state" id="state-4">Waiting</p>
+        </header>
+        <p class="outcome-label">Nosana summary of Neo4j logs <span id="summary-ms"></span></p>
+        <pre id="out-summary" class="outcome">After a run, Nosana reads stored logs and writes an operator summary here.</pre>
       </article>
     </section>
 

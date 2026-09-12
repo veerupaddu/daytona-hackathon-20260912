@@ -6,7 +6,7 @@ Hackathon app that plans Python on a **Nosana** GPU LLM (GPT-OSS 20B), executes 
 Prompt → Nosana writes Python → Daytona runs it → Neo4j records the graph
 ```
 
-The web studio shows each step, a pipeline graph from Aura, and links to Nosana deployment logs and Daytona audit logs.
+The web studio shows each step, Neo4j insights (run graph + timings) above log analysis, and links to Nosana deployment logs and Daytona audit logs.
 
 ## Repository layout
 
@@ -22,6 +22,7 @@ scripts/setup_neo4j.py  Neo4j constraints and indexes
 tests/
 onetime.sh              First-time venv, Docker Neo4j, and schema
 run.sh                  Start or restart the studio UI
+issue.md                Known Nosana GPU / 503 behavior
 .env.example            Public template — copy to .env (gitignored)
 ```
 
@@ -35,7 +36,7 @@ Secrets stay in `.env`. That file is gitignored and must not be committed.
 - [Nosana API key](https://deploy.nosana.com) and GPU credits
 - Optional: [Neo4j Aura](https://console.neo4j.io) (or local Docker)
 
-GPT-OSS 20B needs about 16 GB VRAM. A typical 60-minute `nvidia-5080` job is on the order of **0.2 credits**.
+GPT-OSS 20B needs about 16 GB VRAM. A typical 60-minute job is on the order of **0.2–0.32 credits**, depending on the GPU market. Prefer a host that is **idle now**. Markets with zero idle hosts (often `nvidia-5080`) stay **queued** and the public URL returns **HTTP 503**. See [issue.md](issue.md).
 
 ## Setup
 
@@ -66,6 +67,8 @@ Fill `.env` with your keys. Leave unused values blank.
 | `NEO4J_DATABASE` | Bolt | Usually `neo4j` |
 | `AURA_INSTANCEID` | Optional | Deep-link to the Aura console |
 
+Restart `./run.sh` after you change `NOSANA_LLM_URL` so uvicorn picks up the new endpoint.
+
 ## Web studio
 
 From the repo root, with `.venv` active:
@@ -80,7 +83,13 @@ From the repo root, with `.venv` active:
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Example prompt: `Calculate 2 + 2 and print the result`. `./run.sh stop` stops only the UI. `docker compose down` stops local Neo4j.
 
-If Neo4j is unreachable, the studio still runs with an in-memory graph.
+On load (and after each run) the studio:
+
+1. Shows the latest prompt, Nosana Python, and Daytona stdout from Neo4j
+2. Draws **Neo4j insights** — one Session → Prompt → Nosana → Daytona path per unique prompt, plus grouped GPU vs sandbox timings
+3. Summarizes stored logs in **Log analysis** (Step 4)
+
+Repeated prompts (for example several 503 retries) collapse to a single graph row with a count (`×3`). If Neo4j is unreachable, the studio still runs with an in-memory graph.
 
 Inspect the same data in Aura:
 
@@ -115,7 +124,7 @@ Use `api_url` / `DAYTONA_API_URL`, not the deprecated `server_url`.
 
 ### Nosana (GPT-OSS 20B)
 
-Posting a job **spends credits**. Idle time still burns them; there is no pause.
+There is no official Nosana Python SDK. The studio talks HTTP to a running Ollama job (`/api/tags`, `/v1/chat/completions`). Posting a job uses `@nosana/cli` and **spends credits**. Idle time still burns them; there is no pause.
 
 ```bash
 python -m providers.nosana
@@ -128,7 +137,7 @@ run_in_nosana(market="nvidia-5080", timeout_minutes=60)
 print(add_two_numbers_via_llm(7, 5))
 ```
 
-Wait until the endpoint is healthy (`GET /api/tags` → 200), then set `NOSANA_LLM_URL`. Stop the deployment when you are done.
+Wait until the endpoint is healthy (`GET /api/tags` → 200), then set `NOSANA_LLM_URL`. If the response is 503, the job is queued or still pulling weights — pick a ready GPU or wait. Stop the deployment when you are done.
 
 Prefer `NOSANA_API_KEY` over a funded CLI wallet (`~/.nosana/nosana_key.json`).
 
@@ -152,4 +161,6 @@ python -m unittest discover -s tests -v
 - `DAYTONA_API_KEY is not set` — copy `.env.example` to `.env`.
 - `nosana job post` fails with 0 SOL — set `NOSANA_API_KEY`.
 - LLM tests skip — deploy GPT-OSS, then set `NOSANA_LLM_URL`.
+- Studio health says **Nosana queued / starting** or chat fails with **HTTP 503** — the GPU job is not serving yet. See [issue.md](issue.md). Restart `./run.sh` after you point `.env` at a new URL.
 - Studio graph is empty — run `./onetime.sh` (or `python scripts/setup_neo4j.py`) and confirm Bolt credentials (not Aura API client id/secret).
+- Prompt / Nosana / Daytona boxes look empty after a refresh — they load from the latest Neo4j run; confirm Aura has `Prompt` / `NosanaLog` / `DaytonaLog` nodes.

@@ -290,6 +290,62 @@ button:disabled {
   margin-bottom: 0.7rem;
 }
 
+.graph-board,
+.chart-board {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: auto;
+  margin-bottom: 0.85rem;
+}
+
+.graph-board svg,
+.chart-board svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.graph-empty {
+  margin: 0;
+  padding: 1.6rem 1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.node-session { fill: #e8edf3; stroke: #8a96a5; }
+.node-prompt { fill: #fff4d6; stroke: #c48a00; }
+.node-nosana { fill: #ecebff; stroke: #5b4dff; }
+.node-daytona { fill: #e6f7f1; stroke: #0f8f6b; }
+
+.node-label {
+  fill: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.edge-line {
+  fill: none;
+  stroke: #c5ccd6;
+  stroke-width: 1.5;
+}
+
+.edge-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.chart-legend b.nosana { color: var(--nosana); }
+.chart-legend b.daytona { color: var(--daytona); }
+
 .metric-groups {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -366,11 +422,13 @@ button:disabled {
   color: var(--muted);
 }
 
-.message-card p {
+.message-card p,
+.message-card pre {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   white-space: pre-wrap;
   word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .step {
