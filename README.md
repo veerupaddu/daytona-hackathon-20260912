@@ -18,9 +18,10 @@ studio/                 FastAPI app, orchestrator, Neo4j store, UI
   static/
 providers/              Daytona sandbox + Nosana LLM / job helpers
 jobs/gpt-oss-20b.json   Official Ollama job definition (16 GB VRAM)
-scripts/setup_neo4j.py  One-time Aura constraints and indexes
+scripts/setup_neo4j.py  Neo4j constraints and indexes
 tests/
-run.sh                  Start local Neo4j via Docker Compose
+onetime.sh              First-time venv, Docker Neo4j, and schema
+run.sh                  Start or restart the studio UI
 .env.example            Public template — copy to .env (gitignored)
 ```
 
@@ -70,14 +71,14 @@ Fill `.env` with your keys. Leave unused values blank.
 From the repo root, with `.venv` active:
 
 ```bash
-# optional local Neo4j if you are not using Aura
-./run.sh
+# Once per machine (venv, Neo4j container, graph schema)
+./onetime.sh
 
-python scripts/setup_neo4j.py
-uvicorn studio.app:app --reload --host 127.0.0.1 --port 8000
+# Every time you want the UI (stays running in this terminal; Ctrl+C to stop)
+./run.sh
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Example prompt: `Calculate 2 + 2 and print the result`.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Example prompt: `Calculate 2 + 2 and print the result`. `./run.sh stop` stops only the UI. `docker compose down` stops local Neo4j.
 
 If Neo4j is unreachable, the studio still runs with an in-memory graph.
 
@@ -151,4 +152,4 @@ python -m unittest discover -s tests -v
 - `DAYTONA_API_KEY is not set` — copy `.env.example` to `.env`.
 - `nosana job post` fails with 0 SOL — set `NOSANA_API_KEY`.
 - LLM tests skip — deploy GPT-OSS, then set `NOSANA_LLM_URL`.
-- Studio graph is empty — run `python scripts/setup_neo4j.py` and confirm Bolt credentials (not Aura API client id/secret).
+- Studio graph is empty — run `./onetime.sh` (or `python scripts/setup_neo4j.py`) and confirm Bolt credentials (not Aura API client id/secret).

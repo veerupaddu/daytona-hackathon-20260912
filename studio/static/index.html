@@ -26,15 +26,18 @@
       <p id="status" class="status">Step 1 prompt → Step 2 Nosana writes Python → Step 3 Daytona runs it → Step 4 summarizes Neo4j logs.</p>
     </section>
 
-    <ol class="rail" aria-label="Pipeline">
-      <li class="rail-item" data-step="1"><span class="num">1</span><span class="rail-copy"><strong>Prompt</strong><small>You ask</small></span></li>
-      <li class="rail-arrow" aria-hidden="true"></li>
-      <li class="rail-item" data-step="2"><span class="num">2</span><span class="rail-copy"><strong>Nosana</strong><small>Write code</small></span></li>
-      <li class="rail-arrow" aria-hidden="true"></li>
-      <li class="rail-item" data-step="3"><span class="num">3</span><span class="rail-copy"><strong>Daytona</strong><small>Execute</small></span></li>
-      <li class="rail-arrow" aria-hidden="true"></li>
-      <li class="rail-item" data-step="4"><span class="num">4</span><span class="rail-copy"><strong>Summary</strong><small>Analyze logs</small></span></li>
-    </ol>
+    <section class="pipeline" aria-label="Pipeline">
+      <p class="pipeline-label">Pipeline</p>
+      <ol class="rail">
+        <li class="rail-item" data-step="1"><span class="num">1</span><span class="rail-copy"><strong>Prompt</strong><small>You ask</small></span></li>
+        <li class="rail-arrow" data-after="1" aria-hidden="true"></li>
+        <li class="rail-item" data-step="2"><span class="num">2</span><span class="rail-copy"><strong>Nosana</strong><small>Write code</small></span></li>
+        <li class="rail-arrow" data-after="2" aria-hidden="true"></li>
+        <li class="rail-item" data-step="3"><span class="num">3</span><span class="rail-copy"><strong>Daytona</strong><small>Execute</small></span></li>
+        <li class="rail-arrow" data-after="3" aria-hidden="true"></li>
+        <li class="rail-item" data-step="4"><span class="num">4</span><span class="rail-copy"><strong>Summary</strong><small>Analyze logs</small></span></li>
+      </ol>
+    </section>
 
     <section class="steps">
       <article class="step" data-step="1">
@@ -75,14 +78,6 @@
           <h2>Log analysis</h2>
           <p class="step-state" id="state-4">Waiting</p>
         </header>
-        <div class="stats">
-          <div><strong id="stat-runs">0</strong><span>runs</span></div>
-          <div><strong id="stat-nosana">0 ms</strong><span>avg Nosana</span></div>
-          <div><strong id="stat-daytona">0 ms</strong><span>avg Daytona</span></div>
-          <div><strong id="stat-fail">0 / 0</strong><span>Nosana / Daytona fails</span></div>
-        </div>
-        <p class="outcome-label">Key messages</p>
-        <ul id="key-messages" class="messages"><li>No logs yet. Run the pipeline first.</li></ul>
         <p class="outcome-label">Nosana summary of Neo4j logs <span id="summary-ms"></span></p>
         <pre id="out-summary" class="outcome">After a run, Nosana reads stored logs and writes an operator summary here.</pre>
       </article>
@@ -92,10 +87,44 @@
       <article class="insight-card">
         <header>
           <h2>Neo4j insights</h2>
-          <p class="lede">Session → Prompt → Nosana → Daytona, drawn from stored Aura logs.</p>
+          <p class="lede">Grouped timings and key messages from stored Session → Nosana → Daytona logs.</p>
         </header>
-        <div id="neo4j-graph" class="graph-board" role="img" aria-label="Pipeline graph"></div>
-        <div id="timing-bars" class="timing-bars"></div>
+        <div class="metric-groups">
+          <div class="metric-card runs">
+            <span>Runs</span>
+            <strong id="stat-runs">0</strong>
+          </div>
+          <div class="metric-card nosana">
+            <span>Nosana GPU</span>
+            <strong id="stat-nosana">0 ms</strong>
+            <div class="meter"><i id="meter-nosana"></i></div>
+            <small id="stat-nosana-fail">0 failures</small>
+          </div>
+          <div class="metric-card daytona">
+            <span>Daytona sandbox</span>
+            <strong id="stat-daytona">0 ms</strong>
+            <div class="meter"><i id="meter-daytona"></i></div>
+            <small id="stat-daytona-fail">0 failures</small>
+          </div>
+          <div class="metric-card total">
+            <span>Total pipeline</span>
+            <strong id="stat-total">0 ms</strong>
+          </div>
+        </div>
+        <div class="message-groups" id="message-groups">
+          <article class="message-card prompt">
+            <h3>Prompt</h3>
+            <p>No logs yet.</p>
+          </article>
+          <article class="message-card nosana">
+            <h3>Nosana</h3>
+            <p>No logs yet.</p>
+          </article>
+          <article class="message-card daytona">
+            <h3>Daytona</h3>
+            <p>No logs yet.</p>
+          </article>
+        </div>
       </article>
     </section>
 

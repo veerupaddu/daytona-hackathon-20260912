@@ -17,6 +17,11 @@ function setStep(step, state, label) {
     if (state === "done") stateEl.classList.add("ok");
     if (state === "error") stateEl.classList.add("bad");
   }
+  document.querySelectorAll(".rail-arrow").forEach((arrow) => {
+    const after = Number(arrow.dataset.after || 0);
+    const prev = document.querySelector(`.rail-item[data-step="${after}"]`);
+    arrow.classList.toggle("done", Boolean(prev && prev.classList.contains("done")));
+  });
 }
 
 function resetSteps() {
@@ -48,23 +53,58 @@ function renderLinks(containerId, links) {
   });
 }
 
-function renderAnalysis(data) {
-  document.getElementById("stat-runs").textContent = String(data.run_count || 0);
-  document.getElementById("stat-nosana").textContent = `${data.avg_nosana_ms || 0} ms`;
-  document.getElementById("stat-daytona").textContent = `${data.avg_daytona_ms || 0} ms`;
-  document.getElementById("stat-fail").textContent =
-    `${data.nosana_failures || 0} / ${data.daytona_failures || 0}`;
-  const list = document.getElementById("key-messages");
-  list.innerHTML = "";
-  const messages = data.key_messages && data.key_messages.length
-    ? data.key_messages
-    : ["No key messages yet."];
-  messages.forEach((msg) => {
-    const item = document.createElement("li");
-    item.textContent = msg;
-    list.appendChild(item);
+function escapeText(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function groupKeyMessages(messages, latest) {
+  const groups = { prompt: [], nosana: [], daytona: [] };
+  (messages || []).forEach((msg) => {
+    const text = String(msg);
+    if (/prompt/i.test(text)) groups.prompt.push(text.replace(/^Last prompt:\s*/i, ""));
+    else if (/nosana/i.test(text)) groups.nosana.push(text.replace(/^Nosana[^:]*:\s*/i, ""));
+    else if (/daytona/i.test(text)) groups.daytona.push(text.replace(/^Daytona[^:]*:\s*/i, ""));
   });
+  if (!groups.prompt.length && latest.prompt) groups.prompt.push(latest.prompt);
+  if (!groups.nosana.length && (latest.nosana_reply || latest.nosana_error)) {
+    groups.nosana.push(latest.nosana_error || latest.nosana_reply);
+  }
+  if (!groups.daytona.length && (latest.daytona_output || latest.daytona_error)) {
+    groups.daytona.push(latest.daytona_error || String(latest.daytona_output).trim());
+  }
+  return groups;
+}
+
+function renderAnalysis(data) {
+  const nosana = Number(data.avg_nosana_ms || 0);
+  const daytona = Number(data.avg_daytona_ms || 0);
+  const total = Number(data.total_pipeline_ms || nosana + daytona);
+  const max = Math.max(nosana, daytona, 1);
+  document.getElementById("stat-runs").textContent = String(data.run_count || 0);
+  document.getElementById("stat-nosana").textContent = `${nosana} ms`;
+  document.getElementById("stat-daytona").textContent = `${daytona} ms`;
+  document.getElementById("stat-total").textContent = `${total} ms`;
+  document.getElementById("stat-nosana-fail").textContent =
+    `${data.nosana_failures || 0} failures`;
+  document.getElementById("stat-daytona-fail").textContent =
+    `${data.daytona_failures || 0} failures`;
+  document.getElementById("meter-nosana").style.width = `${(nosana / max) * 100}%`;
+  document.getElementById("meter-daytona").style.width = `${(daytona / max) * 100}%`;
   const latest = (data.runs && data.runs[0]) || {};
+  const groups = groupKeyMessages(data.key_messages, latest);
+  document.getElementById("message-groups").innerHTML = [
+    ["prompt", "Prompt", groups.prompt],
+    ["nosana", "Nosana", groups.nosana],
+    ["daytona", "Daytona", groups.daytona],
+  ]
+    .map(([kind, title, items]) => {
+      const body = items.length ? items.map((item) => escapeText(item)).join("\n\n") : "No logs yet.";
+      return `<article class="message-card ${kind}"><h3>${title}</h3><p>${body}</p></article>`;
+    })
+    .join("");
   document.getElementById("ref-nosana-log").textContent =
     latest.nosana_error || latest.nosana_reply
       ? `${latest.nosana_ms || 0} ms · ${latest.nosana_error || latest.nosana_reply}`
@@ -75,115 +115,24 @@ function renderAnalysis(data) {
       : "Waiting for a run.";
   if (data.llm_summary) document.getElementById("out-summary").textContent = data.llm_summary;
   if (data.llm_ms) document.getElementById("summary-ms").textContent = `${data.llm_ms} ms`;
-  renderTimingBars(data.runs || []);
-}
-
-function escapeXml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function nodeGroup(group) {
-  const raw = String(group || "").toLowerCase();
-  if (raw.includes("session")) return "session";
-  if (raw.includes("prompt")) return "prompt";
-  if (raw.includes("nosana")) return "nosana";
-  if (raw.includes("daytona")) return "daytona";
-  return "other";
-}
-
-function renderGraph(graph) {
-  const board = document.getElementById("neo4j-graph");
-  const nodes = graph.nodes || [];
-  const edges = graph.edges || [];
-  if (!nodes.length) {
-    board.innerHTML = `<p class="graph-empty">No Neo4j nodes yet. Run the pipeline to populate Aura.</p>`;
-    return;
-  }
-  const columns = { session: [], prompt: [], nosana: [], daytona: [], other: [] };
-  nodes.forEach((node) => columns[nodeGroup(node.group)].push(node));
-  const order = ["session", "prompt", "nosana", "daytona"].filter((key) => columns[key].length);
-  if (columns.other.length) order.push("other");
-  const colW = 200;
-  const rowH = 64;
-  const padX = 36;
-  const padY = 28;
-  const maxRows = Math.max(1, ...order.map((key) => columns[key].length));
-  const width = padX * 2 + Math.max(1, order.length) * colW;
-  const height = padY * 2 + maxRows * rowH;
-  const positions = {};
-  order.forEach((key, col) => {
-    columns[key].forEach((node, row) => {
-      positions[node.id] = {
-        x: padX + col * colW + 16,
-        y: padY + row * rowH,
-        label: (() => {
-          const parts = String(node.label || node.title || key).split("\n");
-          return (parts[1] || parts[0] || key).slice(0, 18);
-        })(),
-        group: key,
-      };
-    });
-  });
-  const lines = edges
-    .filter((edge) => positions[edge.from] && positions[edge.to])
-    .map((edge) => {
-      const a = positions[edge.from];
-      const b = positions[edge.to];
-      const x1 = a.x + 132;
-      const y1 = a.y + 18;
-      const x2 = b.x;
-      const y2 = b.y + 18;
-      const mid = (x1 + x2) / 2;
-      return `<path class="edge-line" d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" />
-        <text class="edge-label" x="${mid}" y="${(y1 + y2) / 2 - 6}">${escapeXml(edge.label || "")}</text>`;
-    })
-    .join("");
-  const boxes = Object.entries(positions)
-    .map(
-      ([, pos]) =>
-        `<g>
-          <rect class="node-${pos.group}" x="${pos.x}" y="${pos.y}" width="132" height="36" rx="10" />
-          <text class="node-label" x="${pos.x + 66}" y="${pos.y + 23}" text-anchor="middle">${escapeXml(pos.label)}</text>
-        </g>`
-    )
-    .join("");
-  board.innerHTML = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${lines}${boxes}</svg>`;
-}
-
-function renderTimingBars(runs) {
-  const host = document.getElementById("timing-bars");
-  if (!runs.length) {
-    host.innerHTML = "";
-    return;
-  }
-  const max = Math.max(1, ...runs.map((run) => (run.nosana_ms || 0) + (run.daytona_ms || 0)));
-  host.innerHTML = runs
-    .slice(0, 6)
-    .map((run) => {
-      const prompt = String(run.prompt || "run").slice(0, 42);
-      const nosana = Number(run.nosana_ms || 0);
-      const daytona = Number(run.daytona_ms || 0);
-      return `<div class="timing-row">
-        <p>${escapeXml(prompt)}<small>${nosana} ms GPU · ${daytona} ms sandbox</small></p>
-        <div class="bar-track">
-          <span class="bar-nosana" style="width:${(nosana / max) * 100}%"></span>
-          <span class="bar-daytona" style="width:${(daytona / max) * 100}%"></span>
-        </div>
-      </div>`;
-    })
-    .join("");
 }
 
 async function loadHealth() {
   const res = await fetch("/api/health");
   const data = await res.json();
-  healthEl.textContent =
-    data.backend === "neo4j" ? `Aura connected · ${data.database}` : "Neo4j offline";
-  healthEl.classList.toggle("ok", data.backend === "neo4j");
+  const llm = data.llm || {};
+  const neo = data.backend === "neo4j" ? `Aura · ${data.database}` : "Neo4j offline";
+  const gpu = llm.ready
+    ? "Nosana ready"
+    : llm.status === "queued"
+      ? "Nosana queued / starting"
+      : llm.status
+        ? `Nosana ${llm.status}`
+        : "Nosana unknown";
+  healthEl.textContent = `${neo} · ${gpu}`;
+  healthEl.classList.toggle("ok", data.backend === "neo4j" && Boolean(llm.ready));
+  healthEl.classList.toggle("warn", Boolean(llm.status) && !llm.ready);
+  healthEl.title = llm.detail || "";
   const refs = data.references || {};
   renderLinks("refs-neo4j", refs.neo4j);
   renderLinks("refs-nosana", refs.nosana);
@@ -191,12 +140,8 @@ async function loadHealth() {
 }
 
 async function loadAnalysis() {
-  const [analysisRes, graphRes] = await Promise.all([
-    fetch("/api/analysis"),
-    fetch("/api/graph"),
-  ]);
-  renderAnalysis(await analysisRes.json());
-  renderGraph(await graphRes.json());
+  const res = await fetch("/api/analysis");
+  renderAnalysis(await res.json());
 }
 
 async function summarizeLogs() {

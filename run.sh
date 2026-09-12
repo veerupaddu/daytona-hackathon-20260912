@@ -1,46 +1,51 @@
 #!/usr/bin/env bash
-# Start local Neo4j from docker-compose.yml and wait until Bolt is ready.
+# Start the studio UI in this terminal. Stops any previous :8000 process first.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker is not installed or not on PATH." >&2
-  exit 1
-fi
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-8000}"
+UVICORN_BIN="$ROOT/.venv/bin/uvicorn"
+ACTION="${1:-up}"
 
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker is installed but the daemon is not running. Start Docker Desktop and retry." >&2
-  exit 1
-fi
+stop_studio() {
+  local pids=""
+  if command -v lsof >/dev/null 2>&1; then
+    pids+=" $(lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  fi
+  pids+=" $(pgrep -f "uvicorn studio.app:app" 2>/dev/null || true)"
+  pids="$(printf '%s\n' $pids | awk 'NF && !seen[$0]++')"
+  if [[ -n "$pids" ]]; then
+    echo "Stopping studio on :$PORT ($pids)"
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null || true
+    sleep 0.4
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+  fi
+}
 
-echo "Starting Neo4j (docker compose)..."
-if docker compose up -d --wait; then
-  :
-else
-  echo "compose --wait failed; starting without health wait..."
-  docker compose up -d
-  for _ in $(seq 1 40); do
-    if docker compose exec -T neo4j cypher-shell -u neo4j -p hackathon 'RETURN 1' >/dev/null 2>&1; then
-      break
+case "$ACTION" in
+  stop)
+    stop_studio
+    echo "Stopped studio."
+    ;;
+  up|restart|"")
+    if [[ ! -x "$UVICORN_BIN" ]]; then
+      echo "Missing $UVICORN_BIN"
+      echo "Run one-time setup first:  ./onetime.sh" >&2
+      exit 1
     fi
-    sleep 2
-  done
-fi
-
-echo
-echo "Neo4j is up"
-echo "  Browser  http://127.0.0.1:7474"
-echo "  Bolt     bolt://127.0.0.1:7687"
-echo "  Auth     neo4j / hackathon"
-echo
-echo "Point .env at the local instance if you are not using Aura:"
-echo "  NEO4J_URI=bolt://127.0.0.1:7687"
-echo "  NEO4J_USERNAME=neo4j"
-echo "  NEO4J_PASSWORD=hackathon"
-echo "  NEO4J_DATABASE=neo4j"
-echo
-echo "Then:  python scripts/setup_neo4j.py"
-echo "       uvicorn studio.app:app --reload --host 127.0.0.1 --port 8000"
-echo "Stop:  docker compose down"
+    stop_studio
+    echo "Studio  http://$HOST:$PORT"
+    echo "Ctrl+C to stop.  $0 stop  from another terminal also works."
+    exec "$UVICORN_BIN" studio.app:app --reload --host "$HOST" --port "$PORT"
+    ;;
+  *)
+    echo "Usage: $0 [up|stop]" >&2
+    echo "One-time Neo4j / venv setup:  ./onetime.sh" >&2
+    exit 2
+    ;;
+esac

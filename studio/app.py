@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from providers.nosana import nosana_llm_status
 from studio.graph import GraphStore
 from studio.orchestrator import run_turn, summarize_logs
 
@@ -45,14 +46,17 @@ def index() -> FileResponse:
 def health() -> dict:
     status = store.status()
     nosana_deploy = (
-        os.environ.get("NOSANA_DEPLOYMENT_URL") or "https://deploy.nosana.com/deployments"
+        os.environ.get("NOSANA_DEPLOYMENT_URL")
+        or "https://deploy.nosana.com/deployments/ERrKED8UWS4yAEck9tB44Z1Kz1kkDizKuKK8WEstyaPf"
     ).strip()
     nosana_logs = (
         os.environ.get("NOSANA_LOGS_URL") or (nosana_deploy.rstrip("/") + "#logs")
     ).strip()
     nosana_job = (
-        os.environ.get("NOSANA_JOB_URL") or "https://explore.nosana.com"
+        os.environ.get("NOSANA_JOB_URL")
+        or "https://explore.nosana.com/jobs/2eyyMuz2TmDWDYqhhHS76TSRA3NG5EpF6ohfLpjavs7r"
     ).strip()
+    status["llm"] = nosana_llm_status()
     status["references"] = {
         "neo4j": [
             {"label": "Explore graph", "url": "https://workspace.neo4j.io/workspace/explore", "detail": "Visual graph of Session, Prompt, Nosana, Daytona"},

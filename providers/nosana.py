@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -127,6 +128,44 @@ def nosana_llm_base_url() -> str:
     return raw
 
 
+def nosana_llm_status() -> dict[str, object]:
+    """Probe the configured Ollama endpoint without spending a chat call."""
+    try:
+        base = nosana_llm_base_url()
+    except RuntimeError as exc:
+        return {"ready": False, "status": "unset", "detail": str(exc), "url": ""}
+    tags_url = urljoin(base + "/", "api/tags")
+    try:
+        response = httpx.get(tags_url, timeout=8)
+    except httpx.HTTPError as exc:
+        return {
+            "ready": False,
+            "status": "unreachable",
+            "detail": str(exc),
+            "url": base,
+        }
+    if response.status_code == 200:
+        return {"ready": True, "status": "ready", "detail": "Ollama /api/tags ok", "url": base}
+    if response.status_code == 503:
+        return {
+            "ready": False,
+            "status": "queued",
+            "detail": (
+                "Nosana returned 503 (Service Initializing). The GPU job is "
+                "queued or still pulling weights. Wait until deploy.nosana.com "
+                "shows a running replica, then retry. NVIDIA 5080 often has no "
+                "idle hosts — the old URL stays 503 until a host is assigned."
+            ),
+            "url": base,
+        }
+    return {
+        "ready": False,
+        "status": f"http_{response.status_code}",
+        "detail": response.text[:240],
+        "url": base,
+    }
+
+
 def ask_nosana_llm(prompt: str, *, timeout: float = 120) -> str:
     """Send a chat prompt to the deployed Nosana Ollama model.
 
@@ -144,17 +183,38 @@ def ask_nosana_llm(prompt: str, *, timeout: float = 120) -> str:
     base = nosana_llm_base_url()
     model = (os.environ.get("NOSANA_LLM_MODEL") or "gpt-oss:20b").strip()
     chat_url = urljoin(base + "/", "v1/chat/completions")
-    response = httpx.post(
-        chat_url,
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "temperature": 0,
-        },
-        timeout=timeout,
-    )
-    response.raise_for_status()
+    last_error: Exception | None = None
+    response = None
+    for attempt in range(1, 5):
+        try:
+            response = httpx.post(
+                chat_url,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "temperature": 0,
+                },
+                timeout=timeout,
+            )
+            if response.status_code == 503:
+                last_error = RuntimeError(
+                    "Nosana GPU is not serving yet (HTTP 503). "
+                    "The job is queued or still starting Ollama. "
+                    "Watch deploy.nosana.com until the replica is running, "
+                    "then run again. A 5080 with zero idle hosts stays 503."
+                )
+                time.sleep(min(8 * attempt, 20))
+                continue
+            response.raise_for_status()
+            break
+        except httpx.HTTPError as exc:
+            last_error = exc
+            time.sleep(2)
+    else:
+        raise last_error or RuntimeError("Nosana chat failed without a response")
+    if response is None:
+        raise last_error or RuntimeError("Nosana chat failed without a response")
     payload = response.json()
     try:
         return payload["choices"][0]["message"]["content"]
