@@ -141,28 +141,36 @@ function uniqueRunsByPrompt(runs, limit = 6) {
   return rows;
 }
 
+function splitCurrentAndHistory(runs) {
+  const current = runs[0] || null;
+  if (!current) return { current: null, history: [] };
+  const copies = runs.filter((item) => promptKey(item) === promptKey(current)).length;
+  const history = uniqueRunsByPrompt(
+    runs.filter((item) => item.prompt_id !== current.prompt_id),
+    5,
+  );
+  return { current: { ...current, copies }, history };
+}
+
 function sessionLabel(run) {
+  if (run.session_label) return run.session_label;
   const id = String(run.session_id || "").replace(/^session-/, "");
   return id ? `S ${id.slice(0, 6)}` : "Session";
 }
 
-function renderRunGraph(runs) {
-  const board = document.getElementById("neo4j-graph");
-  const rows = uniqueRunsByPrompt(runs, 6);
-  if (!rows.length) {
-    board.innerHTML = `<p class="graph-empty">No Neo4j runs yet. Execute the pipeline to draw Session → Prompt → Nosana → Daytona.</p>`;
-    return;
-  }
+function graphSvg(rows, { current = false } = {}) {
   const colW = 210;
   const rowH = 62;
   const padX = 28;
-  const padY = 36;
+  const padY = 28;
   const width = padX * 2 + colW * 4;
-  const height = padY * 2 + rows.length * rowH;
+  const height = padY + rows.length * rowH;
   const headers = ["Session", "Prompt", "Nosana", "Daytona"];
   const header = headers
-    .map((title, i) => `<text class="edge-label" x="${padX + i * colW + 66}" y="18" text-anchor="middle">${title}</text>`)
+    .map((title, i) => `<text class="edge-label" x="${padX + i * colW + 66}" y="16" text-anchor="middle">${title}</text>`)
     .join("");
+  const currentClass = current ? " current" : "";
+  const nodeExtra = current ? " node-current" : "";
   const bodies = rows
     .map((run, row) => {
       const y = padY + row * rowH;
@@ -176,7 +184,7 @@ function renderRunGraph(runs) {
         .map(([kind, label], col) => {
           const x = padX + col * colW;
           return `<g>
-            <rect class="node-${kind}" x="${x}" y="${y}" width="132" height="36" rx="10" />
+            <rect class="node-${kind}${nodeExtra}" x="${x}" y="${y}" width="132" height="36" rx="10" />
             <text class="node-label" x="${x + 66}" y="${y + 23}" text-anchor="middle">${escapeText(label)}</text>
           </g>`;
         })
@@ -187,43 +195,98 @@ function renderRunGraph(runs) {
           const x2 = padX + (col + 1) * colW;
           const mid = (x1 + x2) / 2;
           const rel = ["ASKED", "PLANNED_ON", "EXECUTED_IN"][col];
-          return `<path class="edge-line" d="M ${x1} ${y + 18} C ${mid} ${y + 18}, ${mid} ${y + 18}, ${x2} ${y + 18}" />
+          return `<path class="edge-line${currentClass}" d="M ${x1} ${y + 18} C ${mid} ${y + 18}, ${mid} ${y + 18}, ${x2} ${y + 18}" />
             <text class="edge-label" x="${mid}" y="${y + 12}" text-anchor="middle">${rel}</text>`;
         })
         .join("");
       return edges + boxes;
     })
     .join("");
-  board.innerHTML = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${header}${bodies}</svg>`;
+  return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${header}${bodies}</svg>`;
+}
+
+function historyRollup(runs, current) {
+  const past = runs.filter((item) => item.prompt_id !== current.prompt_id);
+  const unique = new Set(past.map(promptKey).filter(Boolean));
+  const nosanaFail = past.filter((item) => item.nosana_error).length;
+  const daytonaFail = past.filter((item) => item.daytona_error).length;
+  const ok = past.find((item) => item.daytona_output && !item.daytona_error);
+  return {
+    session_id: "history",
+    session_label: `${past.length} runs`,
+    prompt: `${unique.size} prompts`,
+    copies: 1,
+    nosana_reply: nosanaFail ? `${nosanaFail} Nosana fails` : `${past.length - nosanaFail} GPU ok`,
+    nosana_error: "",
+    code: "",
+    daytona_output: ok ? String(ok.daytona_output).trim() : "",
+    daytona_error: !ok && daytonaFail ? `${daytonaFail} Daytona fails` : "",
+    nosana_ms: past.length ? Math.round(past.reduce((s, r) => s + Number(r.nosana_ms || 0), 0) / past.length) : 0,
+    daytona_ms: past.length ? Math.round(past.reduce((s, r) => s + Number(r.daytona_ms || 0), 0) / past.length) : 0,
+  };
+}
+
+function renderRunGraph(runs) {
+  const board = document.getElementById("neo4j-graph");
+  const { current } = splitCurrentAndHistory(runs);
+  if (!current) {
+    board.innerHTML = `<p class="graph-empty">No Neo4j runs yet. Execute the pipeline to draw Session → Prompt → Nosana → Daytona.</p>`;
+    return;
+  }
+  const failed = Boolean(current.nosana_error || current.daytona_error);
+  const currentNote = failed ? " · this run failed (Nosana not ready)" : "";
+  const extra = current.copies > 1 ? ` · same prompt stored ${current.copies} times` : "";
+  const past = runs.filter((item) => item.prompt_id !== current.prompt_id);
+  const rollup = past.length ? historyRollup(runs, current) : null;
+  const accumulated = rollup
+    ? `<div class="graph-band history">
+        <p class="graph-band-title">Accumulated · averages of ${past.length} earlier runs</p>
+        ${graphSvg([rollup])}
+      </div>`
+    : "";
+  board.innerHTML = `<div class="graph-band current${failed ? " failed" : ""}">
+      <p class="graph-band-title">Current execution${currentNote}${extra}</p>
+      ${graphSvg([current], { current: true })}
+    </div>${accumulated}`;
 }
 
 function renderTimingChart(runs) {
   const board = document.getElementById("timing-chart");
-  const rows = uniqueRunsByPrompt(runs, 6);
-  if (!rows.length) {
+  const { current } = splitCurrentAndHistory(runs);
+  if (!current) {
     board.innerHTML = "";
     return;
   }
-  const max = Math.max(1, ...rows.map((run) => Math.max(run.nosana_ms || 0, run.daytona_ms || 0)));
-  const left = 120;
+  const past = runs.filter((item) => item.prompt_id !== current.prompt_id);
+  const rollup = past.length ? historyRollup(runs, current) : null;
+  const rows = [
+    { label: "current", nosana: Number(current.nosana_ms || 0), daytona: Number(current.daytona_ms || 0), weight: 1 },
+  ];
+  if (rollup) {
+    rows.push({
+      label: "accumulated avg",
+      nosana: Number(rollup.nosana_ms || 0),
+      daytona: Number(rollup.daytona_ms || 0),
+      weight: 0.5,
+    });
+  }
+  const max = Math.max(1, ...rows.map((row) => Math.max(row.nosana, row.daytona)));
+  const left = 140;
   const top = 16;
-  const barH = 10;
-  const gap = 28;
-  const plotW = 420;
-  const height = top + rows.length * gap + 12;
+  const barH = 12;
+  const gap = 36;
+  const plotW = 400;
+  const height = top + rows.length * gap + 8;
   const width = left + plotW + 24;
   const bars = rows
-    .map((run, i) => {
+    .map((row, i) => {
       const y = top + i * gap;
-      const nosana = Number(run.nosana_ms || 0);
-      const daytona = Number(run.daytona_ms || 0);
-      const label = shorten(run.prompt, 14) || `run ${i + 1}`;
-      return `<text class="edge-label" x="${left - 8}" y="${y + 12}" text-anchor="end">${escapeText(label)}</text>
-        <rect x="${left}" y="${y}" width="${(nosana / max) * plotW}" height="${barH}" rx="4" fill="#5b4dff" />
-        <rect x="${left}" y="${y + 12}" width="${(daytona / max) * plotW}" height="${barH}" rx="4" fill="#0f8f6b" />`;
+      return `<text class="edge-label" x="${left - 8}" y="${y + 14}" text-anchor="end">${escapeText(row.label)}</text>
+        <rect x="${left}" y="${y}" width="${(row.nosana / max) * plotW}" height="${barH}" rx="4" fill="#5b4dff" fill-opacity="${row.weight}" />
+        <rect x="${left}" y="${y + 16}" width="${(row.daytona / max) * plotW}" height="${barH}" rx="4" fill="#0f8f6b" fill-opacity="${row.weight}" />`;
     })
     .join("");
-  board.innerHTML = `<p class="chart-legend"><b class="nosana">■ Nosana GPU</b><b class="daytona">■ Daytona sandbox</b></p>
+  board.innerHTML = `<p class="chart-legend"><b class="nosana">■ Nosana GPU</b><b class="daytona">■ Daytona sandbox</b><span>Two bars only: this run vs average of earlier runs.</span></p>
     <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
 }
 

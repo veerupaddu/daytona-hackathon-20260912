@@ -313,6 +313,46 @@ button:disabled {
   color: var(--muted);
 }
 
+.graph-band {
+  padding: 0.65rem 0.75rem 0.15rem;
+}
+
+.graph-band.history {
+  opacity: 0.72;
+  border-top: 1px dashed var(--line);
+  margin-top: 0.15rem;
+}
+
+.graph-band-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.graph-band.current .graph-band-title {
+  color: var(--ink);
+}
+
+.graph-band.current.failed {
+  background: #fff6f6;
+  border-radius: 10px;
+}
+
+.graph-band.current.failed .graph-band-title {
+  color: #c44755;
+}
+
+.node-current {
+  stroke-width: 2.4;
+}
+
+.edge-line.current {
+  stroke: #1b2430;
+  stroke-width: 2;
+}
+
 .node-session { fill: #e8edf3; stroke: #8a96a5; }
 .node-prompt { fill: #fff4d6; stroke: #c48a00; }
 .node-nosana { fill: #ecebff; stroke: #5b4dff; }
