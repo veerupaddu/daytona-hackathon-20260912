@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nosana + Daytona studio</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <p class="eyebrow">Prompt · GPU plan · Sandbox · Summary</p>
+        <h1>Nosana + Daytona studio</h1>
+      </div>
+      <p id="health" class="pill">checking Neo4j…</p>
+    </header>
+
+    <section class="composer">
+      <form id="prompt-form">
+        <label for="prompt">What should the agent do?</label>
+        <div class="composer-row">
+          <textarea id="prompt" name="prompt" rows="3" required placeholder="Calculate 2 + 2 and print the result"></textarea>
+          <button type="submit" id="run-btn">Run pipeline</button>
+        </div>
+      </form>
+      <p id="status" class="status">Step 1 prompt → Step 2 Nosana writes Python → Step 3 Daytona runs it → Step 4 summarizes Neo4j logs.</p>
+    </section>
+
+    <ol class="rail" aria-label="Pipeline">
+      <li class="rail-item" data-step="1"><span class="num">1</span><span class="rail-copy"><strong>Prompt</strong><small>You ask</small></span></li>
+      <li class="rail-arrow" aria-hidden="true"></li>
+      <li class="rail-item" data-step="2"><span class="num">2</span><span class="rail-copy"><strong>Nosana</strong><small>Write code</small></span></li>
+      <li class="rail-arrow" aria-hidden="true"></li>
+      <li class="rail-item" data-step="3"><span class="num">3</span><span class="rail-copy"><strong>Daytona</strong><small>Execute</small></span></li>
+      <li class="rail-arrow" aria-hidden="true"></li>
+      <li class="rail-item" data-step="4"><span class="num">4</span><span class="rail-copy"><strong>Summary</strong><small>Analyze logs</small></span></li>
+    </ol>
+
+    <section class="steps">
+      <article class="step" data-step="1">
+        <header>
+          <span class="badge">Step 1</span>
+          <h2>Prompt</h2>
+          <p class="step-state" id="state-1">Waiting</p>
+        </header>
+        <p class="outcome-label">Outcome</p>
+        <pre id="out-prompt" class="outcome">Your question will appear here.</pre>
+      </article>
+      <article class="step" data-step="2">
+        <header>
+          <span class="badge">Step 2</span>
+          <h2>Nosana</h2>
+          <p class="step-state" id="state-2">Waiting</p>
+        </header>
+        <p class="outcome-label">Outcome <span id="nosana-ms"></span></p>
+        <pre id="out-nosana" class="outcome">GPT-OSS will write a Python script here.</pre>
+      </article>
+      <article class="step" data-step="3">
+        <header>
+          <span class="badge">Step 3</span>
+          <h2>Daytona</h2>
+          <p class="step-state" id="state-3">Waiting</p>
+        </header>
+        <p class="outcome-label">Code that ran</p>
+        <pre id="out-code" class="outcome code">Sandbox source will appear here.</pre>
+        <p class="outcome-label">Outcome <span id="daytona-ms"></span></p>
+        <pre id="out-daytona" class="outcome">Printed result will appear here.</pre>
+      </article>
+    </section>
+
+    <section class="analysis">
+      <article class="step summary" data-step="4">
+        <header>
+          <span class="badge">Step 4</span>
+          <h2>Log analysis</h2>
+          <p class="step-state" id="state-4">Waiting</p>
+        </header>
+        <div class="stats">
+          <div><strong id="stat-runs">0</strong><span>runs</span></div>
+          <div><strong id="stat-nosana">0 ms</strong><span>avg Nosana</span></div>
+          <div><strong id="stat-daytona">0 ms</strong><span>avg Daytona</span></div>
+          <div><strong id="stat-fail">0 / 0</strong><span>Nosana / Daytona fails</span></div>
+        </div>
+        <p class="outcome-label">Key messages</p>
+        <ul id="key-messages" class="messages"><li>No logs yet. Run the pipeline first.</li></ul>
+        <p class="outcome-label">Nosana summary of Neo4j logs <span id="summary-ms"></span></p>
+        <pre id="out-summary" class="outcome">After a run, Nosana reads stored logs and writes an operator summary here.</pre>
+      </article>
+    </section>
+
+    <section class="insights" aria-label="Neo4j insights">
+      <article class="insight-card">
+        <header>
+          <h2>Neo4j insights</h2>
+          <p class="lede">Session → Prompt → Nosana → Daytona, drawn from stored Aura logs.</p>
+        </header>
+        <div id="neo4j-graph" class="graph-board" role="img" aria-label="Pipeline graph"></div>
+        <div id="timing-bars" class="timing-bars"></div>
+      </article>
+    </section>
+
+    <section class="refs" aria-label="Inspect logs">
+      <article class="ref-card neo4j">
+        <h2>Neo4j</h2>
+        <p class="lede">Open the Aura graph and query the same Session, Nosana, and Daytona nodes.</p>
+        <nav id="refs-neo4j" class="ref-links"></nav>
+      </article>
+      <article class="ref-card nosana">
+        <h2>Nosana</h2>
+        <p class="lede">GPU container and explorer logs for the model that wrote the code.</p>
+        <nav id="refs-nosana" class="ref-links"></nav>
+        <p class="outcome-label">Latest Nosana log</p>
+        <pre id="ref-nosana-log" class="outcome">Waiting for a run.</pre>
+      </article>
+      <article class="ref-card daytona">
+        <h2>Daytona</h2>
+        <p class="lede">Organization audit trail for sandbox create, start, stop, and exec.</p>
+        <nav id="refs-daytona" class="ref-links"></nav>
+        <p class="outcome-label">Latest Daytona log</p>
+        <pre id="ref-daytona-log" class="outcome">Waiting for a run.</pre>
+      </article>
+    </section>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "version": "0.1",
+  "type": "container",
+  "meta": {
+    "trigger": "python",
+    "template": "gpt-oss",
+    "variant": "20b",
+    "recommended_gpu": "nvidia-5080",
+    "timeout_minutes": 60,
+    "system_requirements": {
+      "vram_total_mb": 16384
+    }
+  },
+  "global": {
+    "variables": {
+      "MODEL": "gpt-oss:20b"
+    }
+  },
+  "ops": [
+    {
+      "id": "gpt-oss:20b",
+      "type": "container/run",
+      "args": {
+        "gpu": true,
+        "image": "docker.io/ollama/ollama:0.32.6",
+        "expose": [
+          {
+            "port": 11434,
+            "health_checks": [
+              {
+                "path": "/api/tags",
+                "type": "http",
+                "method": "GET",
+                "continuous": false,
+                "expected_status": 200
+              }
+            ]
+          }
+        ],
+        "resources": [
+          {
+            "type": "Ollama",
+            "model": "%%global.variables.MODEL%%"
+          }
+        ]
+      }
+    }
+  ]
+}
